@@ -10,7 +10,7 @@ from mutagen.flac import FLAC, Picture
 
 log = logging.getLogger('metadata')
 
-DEFAULT_COVER_PATH = os.path.join(os.path.dirname(__file__), 'default_cover.png')
+DEFAULT_COVER_PATH = '/static/img/default_cover.png'
 
 
 def _read_cover_image(cover_source: str | None, use_default_cover: bool) -> bytes | None:
