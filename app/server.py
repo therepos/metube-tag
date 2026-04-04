@@ -13,14 +13,72 @@ METUBE_URL = os.environ.get('METUBE_URL', 'http://metube:8081')
 DOWNLOAD_DIR = os.environ.get('DOWNLOAD_DIR', '/downloads')
 LISTEN_PORT = int(os.environ.get('PORT', '3010'))
 AUDIO_EXTENSIONS = {'.mp3', '.m4a', '.opus', '.ogg', '.flac', '.wav'}
+STABLE_CHECK_INTERVAL = 2  # seconds between size checks
+STABLE_CHECK_COUNT = 3     # file must be same size for this many checks
 
 # In-memory state
-recent_files = []  # list of dicts: {filename, path, status, tagged_at, meta}
+recent_files = []  # list of dicts: {filename, path, status, meta}
+pending_files = set()  # paths being monitored for stability
 MAX_RECENT = 50
 
 
 def is_audio_file(path):
     return os.path.splitext(path)[1].lower() in AUDIO_EXTENSIONS
+
+
+async def wait_for_stable(app, path):
+    """Wait until a file stops growing, then add it to recent_files."""
+    try:
+        last_size = -1
+        stable_count = 0
+
+        while stable_count < STABLE_CHECK_COUNT:
+            await asyncio.sleep(STABLE_CHECK_INTERVAL)
+
+            if not os.path.isfile(path):
+                log.debug(f"File disappeared while waiting: {path}")
+                pending_files.discard(path)
+                return
+
+            current_size = os.path.getsize(path)
+            if current_size == last_size and current_size > 0:
+                stable_count += 1
+            else:
+                stable_count = 0
+            last_size = current_size
+
+        pending_files.discard(path)
+
+        # Skip if already tracked
+        if any(f['path'] == path for f in recent_files):
+            return
+
+        rel = os.path.relpath(path, DOWNLOAD_DIR)
+        entry = {
+            'filename': os.path.basename(path),
+            'rel_path': rel,
+            'path': path,
+            'status': 'new',
+            'size': os.path.getsize(path),
+            'meta': {},
+        }
+        recent_files.insert(0, entry)
+        if len(recent_files) > MAX_RECENT:
+            recent_files.pop()
+        log.info(f"New audio file ready: {rel} ({entry['size']} bytes)")
+
+        # Notify connected websocket clients
+        for ws in app.get('ws_clients', []):
+            try:
+                await ws.send_json({'type': 'new_file', 'file': entry})
+            except Exception:
+                pass
+
+    except asyncio.CancelledError:
+        pending_files.discard(path)
+    except Exception as e:
+        pending_files.discard(path)
+        log.error(f"Stability check error for {path}: {e}")
 
 
 async def watch_downloads(app):
@@ -29,30 +87,16 @@ async def watch_downloads(app):
     try:
         async for changes in awatch(DOWNLOAD_DIR, recursive=True):
             for change_type, path in changes:
-                if change_type == Change.added and is_audio_file(path) and os.path.isfile(path):
-                    rel = os.path.relpath(path, DOWNLOAD_DIR)
-                    # Skip if already tracked
+                if change_type in (Change.added, Change.modified) and is_audio_file(path) and os.path.isfile(path):
+                    # Skip if already tracked or already being monitored
                     if any(f['path'] == path for f in recent_files):
                         continue
-                    entry = {
-                        'filename': os.path.basename(path),
-                        'rel_path': rel,
-                        'path': path,
-                        'status': 'new',
-                        'size': os.path.getsize(path),
-                        'meta': {},
-                    }
-                    recent_files.insert(0, entry)
-                    if len(recent_files) > MAX_RECENT:
-                        recent_files.pop()
-                    log.info(f"New audio file detected: {rel}")
+                    if path in pending_files:
+                        continue
 
-                    # Notify connected websocket clients
-                    for ws in app.get('ws_clients', []):
-                        try:
-                            await ws.send_json({'type': 'new_file', 'file': entry})
-                        except Exception:
-                            pass
+                    pending_files.add(path)
+                    asyncio.create_task(wait_for_stable(app, path))
+
     except asyncio.CancelledError:
         log.info("File watcher stopped")
     except Exception as e:
@@ -196,7 +240,6 @@ async def proxy_metube(request):
         try:
             method = request.method.lower()
             headers = {}
-            # Forward relevant headers
             for h in ('content-type', 'accept', 'accept-encoding'):
                 if h in request.headers:
                     headers[h] = request.headers[h]

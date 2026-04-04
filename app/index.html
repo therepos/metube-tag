@@ -3,62 +3,133 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MeTube + Audio Tagger</title>
+  <title>MeTube</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #1a1a1a; }
-    @media (prefers-color-scheme: dark) {
-      body { background: #1a1a1a; color: #e5e5e5; }
-      .tagger-panel { background: #222; border-color: #333; }
-      .file-card { background: #2a2a2a; border-color: #333; }
-      .file-card input[type="text"] { background: #333; color: #e5e5e5; border-color: #444; }
-      .badge-new { background: #1e3a5f; color: #7bb8f0; }
-      .badge-tagged { background: #1a3a2a; color: #6bcf8e; }
-      .badge-processing { background: #3a3520; color: #e0c060; }
-      .badge-skipped { background: #333; color: #888; }
-      .btn-tag { background: #2563eb; }
-      .header { background: #222; border-color: #333; }
-      .recent-label { color: #666; }
-      .meta-info { color: #888; }
-      .file-input { background: #333; color: #e5e5e5; border-color: #444; }
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #1a1a1a; overflow: hidden; }
 
-    .header {
+    .metube-frame { width: 100%; height: 100vh; border: none; display: block; }
+
+    /* Floating button */
+    .fab {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+      z-index: 1000;
+      transition: transform 0.15s, background 0.15s;
+    }
+    .fab:hover { background: #2563eb; transform: scale(1.05); }
+    .fab svg { width: 22px; height: 22px; }
+
+    /* Badge */
+    .fab-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: #ef4444;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      min-width: 20px;
+      height: 20px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 5px;
+      display: none;
+    }
+    .fab-badge.show { display: flex; }
+
+    /* Connection dot on FAB */
+    .fab-dot {
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #22c55e;
+      border: 2px solid #3b82f6;
+    }
+    .fab-dot.disconnected { background: #ef4444; }
+
+    /* Drawer overlay */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.3);
+      z-index: 1001;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+    .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+
+    /* Drawer */
+    .drawer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      max-height: 70vh;
       background: #fff;
-      border-bottom: 1px solid #e5e5e5;
-      padding: 10px 20px;
+      border-radius: 16px 16px 0 0;
+      z-index: 1002;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+    }
+    .drawer.open { transform: translateY(0); }
+
+    .drawer-handle {
+      width: 36px;
+      height: 4px;
+      border-radius: 2px;
+      background: #d1d5db;
+      margin: 10px auto 6px;
+      cursor: grab;
+    }
+    .drawer-header {
+      padding: 4px 20px 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      border-bottom: 1px solid #eee;
     }
-    .header h1 { font-size: 16px; font-weight: 600; }
-    .header .status { font-size: 12px; color: #888; display: flex; align-items: center; gap: 6px; }
-    .header .dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; }
-
-    .metube-frame {
-      width: 100%;
-      height: 55vh;
-      min-height: 400px;
+    .drawer-header h2 { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .drawer-header .dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; }
+    .drawer-close {
+      background: none;
       border: none;
-      display: block;
+      font-size: 22px;
+      color: #999;
+      cursor: pointer;
+      padding: 4px 8px;
+      line-height: 1;
+    }
+    .drawer-close:hover { color: #333; }
+
+    .drawer-body {
+      padding: 14px 20px 20px;
+      overflow-y: auto;
+      flex: 1;
     }
 
-    .tagger-panel {
-      background: #fff;
-      border-top: 1px solid #e5e5e5;
-      padding: 16px 20px;
-      min-height: 200px;
-    }
-    .tagger-title {
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .tagger-title .dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
-
+    /* File cards */
     .file-card {
       background: #f9f9f9;
       border: 1px solid #e5e5e5;
@@ -66,150 +137,124 @@
       padding: 12px 14px;
       margin-bottom: 10px;
     }
-    .file-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
-    }
-    .file-name { font-size: 13px; font-weight: 500; }
+    .file-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .file-name { font-size: 13px; font-weight: 500; word-break: break-all; }
 
-    .badge {
-      font-size: 10px;
-      font-weight: 600;
-      padding: 2px 7px;
-      border-radius: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
+    .badge { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
     .badge-new { background: #dbeafe; color: #1d4ed8; }
     .badge-tagged { background: #d1fae5; color: #047857; }
     .badge-processing { background: #fef3c7; color: #92400e; }
     .badge-skipped { background: #f3f4f6; color: #6b7280; }
     .badge-error { background: #fce4e4; color: #b91c1c; }
 
-    .fields-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 10px;
-    }
-    .field label {
-      display: block;
-      font-size: 11px;
-      color: #888;
-      margin-bottom: 3px;
-    }
-    .field input[type="text"] {
-      width: 100%;
-      padding: 6px 8px;
-      font-size: 12px;
-      border: 1px solid #ddd;
-      border-radius: 5px;
-      background: #fff;
-    }
-    .file-input {
-      padding: 4px;
-      font-size: 11px;
-      border: 1px solid #ddd;
-      border-radius: 5px;
-      background: #fff;
-    }
-    .cover-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 10px;
-      font-size: 12px;
-    }
+    .fields-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .field label { display: block; font-size: 11px; color: #888; margin-bottom: 3px; }
+    .field input[type="text"] { width: 100%; padding: 6px 8px; font-size: 12px; border: 1px solid #ddd; border-radius: 5px; background: #fff; }
+    .cover-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 12px; }
     .cover-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
-    .cover-preview { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid #ddd; }
+    .actions-row { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 
-    .actions-row {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 6px;
-    }
-    .btn {
-      padding: 5px 14px;
-      font-size: 12px;
-      border-radius: 5px;
-      cursor: pointer;
-      border: 1px solid #ddd;
-      background: #fff;
-      font-weight: 500;
-    }
-    .btn-tag {
-      background: #3b82f6;
-      color: #fff;
-      border: none;
-    }
+    .btn { padding: 5px 14px; font-size: 12px; border-radius: 5px; cursor: pointer; border: 1px solid #ddd; background: #fff; font-weight: 500; }
+    .btn-tag { background: #3b82f6; color: #fff; border: none; }
     .btn-tag:hover { background: #2563eb; }
     .btn-skip { color: #888; }
     .btn-retag { font-size: 11px; color: #888; padding: 3px 10px; }
 
-    .done-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid #eee;
-    }
-    .done-info { display: flex; align-items: center; gap: 8px; }
-    .done-name { font-size: 13px; font-weight: 500; }
+    .done-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+    .done-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .done-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .meta-info { font-size: 11px; color: #999; margin-top: 2px; }
     .recent-label { font-size: 11px; color: #aaa; letter-spacing: 0.3px; margin: 12px 0 6px; text-transform: uppercase; }
-    .empty-state { text-align: center; padding: 30px; color: #aaa; font-size: 13px; }
+    .empty-state { text-align: center; padding: 24px; color: #aaa; font-size: 13px; }
+
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a1a; color: #e5e5e5; }
+      .drawer { background: #222; }
+      .drawer-handle { background: #555; }
+      .drawer-header { border-color: #333; }
+      .drawer-close { color: #666; }
+      .drawer-close:hover { color: #ccc; }
+      .file-card { background: #2a2a2a; border-color: #333; }
+      .file-card input[type="text"] { background: #333; color: #e5e5e5; border-color: #444; }
+      .badge-new { background: #1e3a5f; color: #7bb8f0; }
+      .badge-tagged { background: #1a3a2a; color: #6bcf8e; }
+      .badge-processing { background: #3a3520; color: #e0c060; }
+      .badge-skipped { background: #333; color: #888; }
+      .done-item { border-color: #333; }
+      .btn { background: #333; border-color: #444; color: #ccc; }
+      .btn-tag { background: #3b82f6; color: #fff; border: none; }
+      .meta-info { color: #666; }
+    }
 
     @media (max-width: 640px) {
       .fields-row { grid-template-columns: 1fr; }
-      .metube-frame { height: 45vh; min-height: 300px; }
+      .drawer { max-height: 85vh; }
     }
   </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>MeTube + Audio Tagger</h1>
-  <div class="status">
-    <span class="dot" id="watcher-dot"></span>
-    <span id="watcher-status">Connecting...</span>
-  </div>
-</div>
-
-<!-- MeTube iframe -->
+<!-- MeTube full screen -->
 <iframe class="metube-frame" src="/metube/" id="metube-frame"></iframe>
 
-<!-- Tagger panel -->
-<div class="tagger-panel">
-  <div class="tagger-title">
-    Audio tagger
-    <span class="dot" id="tagger-dot"></span>
+<!-- Floating action button -->
+<button class="fab" id="fab" onclick="toggleDrawer()">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+  </svg>
+  <span class="fab-badge" id="fab-badge">0</span>
+  <span class="fab-dot" id="fab-dot"></span>
+</button>
+
+<!-- Drawer overlay -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="toggleDrawer()"></div>
+
+<!-- Drawer -->
+<div class="drawer" id="drawer">
+  <div class="drawer-handle"></div>
+  <div class="drawer-header">
+    <h2>Audio tagger <span class="dot" id="drawer-dot"></span></h2>
+    <button class="drawer-close" onclick="toggleDrawer()">&times;</button>
   </div>
-  <div id="file-list">
-    <div class="empty-state" id="empty-state">Waiting for new audio downloads...</div>
+  <div class="drawer-body" id="file-list">
+    <div class="empty-state">Waiting for new audio downloads...</div>
   </div>
 </div>
 
 <script>
 const fileList = document.getElementById('file-list');
-const emptyState = document.getElementById('empty-state');
-const watcherStatus = document.getElementById('watcher-status');
-const watcherDot = document.getElementById('watcher-dot');
+const fab = document.getElementById('fab');
+const fabBadge = document.getElementById('fab-badge');
+const fabDot = document.getElementById('fab-dot');
+const drawer = document.getElementById('drawer');
+const drawerOverlay = document.getElementById('drawer-overlay');
 let files = [];
+let drawerOpen = false;
 let ws;
+
+function toggleDrawer() {
+  drawerOpen = !drawerOpen;
+  drawer.classList.toggle('open', drawerOpen);
+  drawerOverlay.classList.toggle('open', drawerOpen);
+  fab.style.display = drawerOpen ? 'none' : 'flex';
+}
+
+function updateBadge() {
+  const count = files.filter(f => f.status === 'new').length;
+  fabBadge.textContent = count;
+  fabBadge.classList.toggle('show', count > 0);
+}
 
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/tagger/ws`);
   ws.onopen = () => {
-    watcherStatus.textContent = 'Watching /downloads';
-    watcherDot.style.background = '#22c55e';
+    fabDot.classList.remove('disconnected');
+    document.getElementById('drawer-dot').style.background = '#22c55e';
   };
   ws.onclose = () => {
-    watcherStatus.textContent = 'Reconnecting...';
-    watcherDot.style.background = '#ef4444';
+    fabDot.classList.add('disconnected');
+    document.getElementById('drawer-dot').style.background = '#ef4444';
     setTimeout(connectWS, 3000);
   };
   ws.onmessage = (e) => {
@@ -219,6 +264,10 @@ function connectWS() {
       if (!exists) {
         files.unshift(msg.file);
         render();
+        // Auto-open drawer when new file arrives
+        if (!drawerOpen) {
+          toggleDrawer();
+        }
       }
     } else if (msg.type === 'status') {
       const f = files.find(f => f.path === msg.path);
@@ -245,6 +294,8 @@ async function loadFiles() {
 function render() {
   const newFiles = files.filter(f => f.status === 'new' || f.status === 'processing' || f.status === 'error');
   const doneFiles = files.filter(f => f.status === 'tagged' || f.status === 'skipped');
+
+  updateBadge();
 
   if (files.length === 0) {
     fileList.innerHTML = '<div class="empty-state">Waiting for new audio downloads...</div>';
@@ -296,14 +347,14 @@ function render() {
       const badgeClass = f.status === 'tagged' ? 'badge-tagged' : 'badge-skipped';
       const badgeText = f.status === 'tagged' ? 'DONE' : 'SKIPPED';
       const meta = f.meta || {};
-      const parts = [meta.artist, meta.album, meta.use_default_cover ? 'default cover' : 'custom cover'].filter(Boolean);
+      const parts = [meta.artist, meta.album, meta.use_default_cover ? 'default cover' : ''].filter(Boolean);
       const metaStr = parts.length > 0 ? parts.join(' &middot; ') : '';
 
       html += `
         <div class="done-item">
           <div class="done-info">
             <span class="badge ${badgeClass}">${badgeText}</span>
-            <div>
+            <div style="min-width:0;">
               <div class="done-name">${esc(f.filename)}</div>
               ${metaStr ? `<div class="meta-info">${metaStr}</div>` : ''}
             </div>
@@ -311,6 +362,10 @@ function render() {
           ${f.status === 'tagged' ? `<button class="btn btn-retag" onclick="retagFile('${esc(f.path)}')">Re-tag</button>` : ''}
         </div>`;
     }
+  }
+
+  if (!html) {
+    html = '<div class="empty-state">Waiting for new audio downloads...</div>';
   }
 
   fileList.innerHTML = html;
