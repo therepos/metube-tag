@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MeTube + Audio Tagger</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #1a1a1a; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a1a; color: #e5e5e5; }
+      .tagger-panel { background: #222; border-color: #333; }
+      .file-card { background: #2a2a2a; border-color: #333; }
+      .file-card input[type="text"] { background: #333; color: #e5e5e5; border-color: #444; }
+      .badge-new { background: #1e3a5f; color: #7bb8f0; }
+      .badge-tagged { background: #1a3a2a; color: #6bcf8e; }
+      .badge-processing { background: #3a3520; color: #e0c060; }
+      .badge-skipped { background: #333; color: #888; }
+      .btn-tag { background: #2563eb; }
+      .header { background: #222; border-color: #333; }
+      .recent-label { color: #666; }
+      .meta-info { color: #888; }
+      .file-input { background: #333; color: #e5e5e5; border-color: #444; }
+    }
+
+    .header {
+      background: #fff;
+      border-bottom: 1px solid #e5e5e5;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 { font-size: 16px; font-weight: 600; }
+    .header .status { font-size: 12px; color: #888; display: flex; align-items: center; gap: 6px; }
+    .header .dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; }
+
+    .metube-frame {
+      width: 100%;
+      height: 55vh;
+      min-height: 400px;
+      border: none;
+      display: block;
+    }
+
+    .tagger-panel {
+      background: #fff;
+      border-top: 1px solid #e5e5e5;
+      padding: 16px 20px;
+      min-height: 200px;
+    }
+    .tagger-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tagger-title .dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+
+    .file-card {
+      background: #f9f9f9;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+    .file-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .file-name { font-size: 13px; font-weight: 500; }
+
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .badge-new { background: #dbeafe; color: #1d4ed8; }
+    .badge-tagged { background: #d1fae5; color: #047857; }
+    .badge-processing { background: #fef3c7; color: #92400e; }
+    .badge-skipped { background: #f3f4f6; color: #6b7280; }
+    .badge-error { background: #fce4e4; color: #b91c1c; }
+
+    .fields-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .field label {
+      display: block;
+      font-size: 11px;
+      color: #888;
+      margin-bottom: 3px;
+    }
+    .field input[type="text"] {
+      width: 100%;
+      padding: 6px 8px;
+      font-size: 12px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background: #fff;
+    }
+    .file-input {
+      padding: 4px;
+      font-size: 11px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background: #fff;
+    }
+    .cover-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    .cover-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .cover-preview { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid #ddd; }
+
+    .actions-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+    .btn {
+      padding: 5px 14px;
+      font-size: 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: #fff;
+      font-weight: 500;
+    }
+    .btn-tag {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+    }
+    .btn-tag:hover { background: #2563eb; }
+    .btn-skip { color: #888; }
+    .btn-retag { font-size: 11px; color: #888; padding: 3px 10px; }
+
+    .done-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .done-info { display: flex; align-items: center; gap: 8px; }
+    .done-name { font-size: 13px; font-weight: 500; }
+    .meta-info { font-size: 11px; color: #999; margin-top: 2px; }
+    .recent-label { font-size: 11px; color: #aaa; letter-spacing: 0.3px; margin: 12px 0 6px; text-transform: uppercase; }
+    .empty-state { text-align: center; padding: 30px; color: #aaa; font-size: 13px; }
+
+    @media (max-width: 640px) {
+      .fields-row { grid-template-columns: 1fr; }
+      .metube-frame { height: 45vh; min-height: 300px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>MeTube + Audio Tagger</h1>
+  <div class="status">
+    <span class="dot" id="watcher-dot"></span>
+    <span id="watcher-status">Connecting...</span>
+  </div>
+</div>
+
+<!-- MeTube iframe -->
+<iframe class="metube-frame" src="/metube/" id="metube-frame"></iframe>
+
+<!-- Tagger panel -->
+<div class="tagger-panel">
+  <div class="tagger-title">
+    Audio tagger
+    <span class="dot" id="tagger-dot"></span>
+  </div>
+  <div id="file-list">
+    <div class="empty-state" id="empty-state">Waiting for new audio downloads...</div>
+  </div>
+</div>
+
+<script>
+const fileList = document.getElementById('file-list');
+const emptyState = document.getElementById('empty-state');
+const watcherStatus = document.getElementById('watcher-status');
+const watcherDot = document.getElementById('watcher-dot');
+let files = [];
+let ws;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/tagger/ws`);
+  ws.onopen = () => {
+    watcherStatus.textContent = 'Watching /downloads';
+    watcherDot.style.background = '#22c55e';
+  };
+  ws.onclose = () => {
+    watcherStatus.textContent = 'Reconnecting...';
+    watcherDot.style.background = '#ef4444';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'new_file') {
+      const exists = files.find(f => f.path === msg.file.path);
+      if (!exists) {
+        files.unshift(msg.file);
+        render();
+      }
+    } else if (msg.type === 'status') {
+      const f = files.find(f => f.path === msg.path);
+      if (f) {
+        f.status = msg.status;
+        if (msg.new_path) f.path = msg.new_path;
+        if (msg.entry) Object.assign(f, msg.entry);
+        render();
+      }
+    }
+  };
+}
+
+async function loadFiles() {
+  try {
+    const resp = await fetch('/tagger/files');
+    files = await resp.json();
+    render();
+  } catch (e) {
+    console.error('Failed to load files:', e);
+  }
+}
+
+function render() {
+  const newFiles = files.filter(f => f.status === 'new' || f.status === 'processing' || f.status === 'error');
+  const doneFiles = files.filter(f => f.status === 'tagged' || f.status === 'skipped');
+
+  if (files.length === 0) {
+    fileList.innerHTML = '<div class="empty-state">Waiting for new audio downloads...</div>';
+    return;
+  }
+
+  let html = '';
+
+  for (const f of newFiles) {
+    const badgeClass = f.status === 'new' ? 'badge-new' : f.status === 'processing' ? 'badge-processing' : 'badge-error';
+    const badgeText = f.status === 'new' ? 'NEW' : f.status === 'processing' ? 'PROCESSING' : 'ERROR';
+    const disabled = f.status === 'processing' ? 'disabled' : '';
+
+    html += `
+      <div class="file-card" data-path="${esc(f.path)}">
+        <div class="file-header">
+          <span class="badge ${badgeClass}">${badgeText}</span>
+          <span class="file-name">${esc(f.filename)}</span>
+        </div>
+        <div class="fields-row">
+          <div class="field">
+            <label>Filename</label>
+            <input type="text" class="input-filename" placeholder="Enter filename" ${disabled} />
+          </div>
+          <div class="field">
+            <label>Artist</label>
+            <input type="text" class="input-artist" placeholder="Enter artist" ${disabled} />
+          </div>
+          <div class="field">
+            <label>Album</label>
+            <input type="text" class="input-album" placeholder="Enter album" ${disabled} />
+          </div>
+        </div>
+        <div class="cover-row">
+          <label><input type="checkbox" class="input-cover" checked ${disabled} /> Default cover</label>
+        </div>
+        <div class="actions-row">
+          <button class="btn btn-skip" onclick="skipFile('${esc(f.path)}')" ${disabled}>Skip</button>
+          <button class="btn btn-tag" onclick="tagFile('${esc(f.path)}')" ${disabled}>
+            ${f.status === 'processing' ? 'Applying...' : 'Apply tags'}
+          </button>
+        </div>
+      </div>`;
+  }
+
+  if (doneFiles.length > 0) {
+    html += '<div class="recent-label">Recent</div>';
+    for (const f of doneFiles) {
+      const badgeClass = f.status === 'tagged' ? 'badge-tagged' : 'badge-skipped';
+      const badgeText = f.status === 'tagged' ? 'DONE' : 'SKIPPED';
+      const meta = f.meta || {};
+      const parts = [meta.artist, meta.album, meta.use_default_cover ? 'default cover' : 'custom cover'].filter(Boolean);
+      const metaStr = parts.length > 0 ? parts.join(' &middot; ') : '';
+
+      html += `
+        <div class="done-item">
+          <div class="done-info">
+            <span class="badge ${badgeClass}">${badgeText}</span>
+            <div>
+              <div class="done-name">${esc(f.filename)}</div>
+              ${metaStr ? `<div class="meta-info">${metaStr}</div>` : ''}
+            </div>
+          </div>
+          ${f.status === 'tagged' ? `<button class="btn btn-retag" onclick="retagFile('${esc(f.path)}')">Re-tag</button>` : ''}
+        </div>`;
+    }
+  }
+
+  fileList.innerHTML = html;
+}
+
+async function tagFile(path) {
+  const card = document.querySelector(`[data-path="${CSS.escape(path)}"]`);
+  if (!card) return;
+
+  const data = {
+    path: path,
+    custom_filename: card.querySelector('.input-filename')?.value || '',
+    artist: card.querySelector('.input-artist')?.value || '',
+    album: card.querySelector('.input-album')?.value || '',
+    use_default_cover: card.querySelector('.input-cover')?.checked ?? true,
+  };
+
+  try {
+    const resp = await fetch('/tagger/tag', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    const result = await resp.json();
+    if (result.status === 'error') {
+      alert('Tagging failed: ' + result.msg);
+    }
+  } catch (e) {
+    alert('Tagging failed: ' + e.message);
+  }
+}
+
+async function skipFile(path) {
+  try {
+    await fetch('/tagger/skip', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path}),
+    });
+    const f = files.find(f => f.path === path);
+    if (f) f.status = 'skipped';
+    render();
+  } catch (e) {
+    console.error('Skip failed:', e);
+  }
+}
+
+function retagFile(path) {
+  const f = files.find(f => f.path === path);
+  if (f) {
+    f.status = 'new';
+    render();
+  }
+}
+
+function esc(s) {
+  const div = document.createElement('div');
+  div.textContent = s || '';
+  return div.innerHTML;
+}
+
+loadFiles();
+connectWS();
+</script>
+</body>
+</html>

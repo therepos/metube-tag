@@ -1,0 +1,29 @@
+services:
+  metube:
+    image: ghcr.io/alexta69/metube:latest
+    container_name: metube
+    volumes:
+      - /mnt/sec/media/music:/downloads
+      - /mnt/sec/apps/metube/config:/downloads/.metube
+    restart: unless-stopped
+    security_opt:
+      - apparmor=unconfined
+      - seccomp=unconfined
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  tagger:
+    image: ghcr.io/therepos/metube-tag:latest
+    container_name: metube-tag
+    ports:
+      - "3010:3010"
+    volumes:
+      - /mnt/sec/media/music:/downloads
+    depends_on:
+      - metube
+    restart: unless-stopped
+    security_opt:
+      - apparmor=unconfined
+      - seccomp=unconfined
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
