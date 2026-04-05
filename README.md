@@ -1,6 +1,6 @@
 ## Usage
 
-Execute the wget command line from the selected script.
+Deploy via docker compose.
 
 ## Structure
 
