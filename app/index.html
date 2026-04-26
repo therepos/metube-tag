@@ -167,6 +167,31 @@
     .recent-label { font-size: 11px; color: #aaa; letter-spacing: 0.3px; margin: 12px 0 6px; text-transform: uppercase; }
     .empty-state { text-align: center; padding: 24px; color: #aaa; font-size: 13px; }
 
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #1f2937;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+      z-index: 1100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.success { background: #047857; }
+    .toast.error { background: #b91c1c; }
+
     @media (prefers-color-scheme: dark) {
       body { background: #1a1a1a; color: #e5e5e5; }
       .drawer { background: #222; }
@@ -221,6 +246,9 @@
   </div>
 </div>
 
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
 <script>
 const fileList = document.getElementById('file-list');
 const fab = document.getElementById('fab');
@@ -270,7 +298,8 @@ function connectWS() {
         }
       }
     } else if (msg.type === 'status') {
-      const f = files.find(f => f.path === msg.path);
+      // Match on either the original path or the new path (in case local optimistic update already moved it)
+      const f = files.find(f => f.path === msg.path || (msg.new_path && f.path === msg.new_path));
       if (f) {
         f.status = msg.status;
         if (msg.new_path) f.path = msg.new_path;
@@ -292,8 +321,16 @@ async function loadFiles() {
 }
 
 function render() {
-  const newFiles = files.filter(f => f.status === 'new' || f.status === 'processing' || f.status === 'error');
-  const doneFiles = files.filter(f => f.status === 'tagged' || f.status === 'skipped');
+  const newFiles = [];
+  const doneFiles = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    if (f.status === 'new' || f.status === 'processing' || f.status === 'error') {
+      newFiles.push({f, i});
+    } else if (f.status === 'tagged' || f.status === 'skipped') {
+      doneFiles.push({f, i});
+    }
+  }
 
   updateBadge();
 
@@ -304,13 +341,14 @@ function render() {
 
   let html = '';
 
-  for (const f of newFiles) {
+  for (const {f, i} of newFiles) {
     const badgeClass = f.status === 'new' ? 'badge-new' : f.status === 'processing' ? 'badge-processing' : 'badge-error';
     const badgeText = f.status === 'new' ? 'NEW' : f.status === 'processing' ? 'PROCESSING' : 'ERROR';
     const disabled = f.status === 'processing' ? 'disabled' : '';
+    const draft = f.draft || {};
 
     html += `
-      <div class="file-card" data-path="${esc(f.path)}">
+      <div class="file-card" data-index="${i}">
         <div class="file-header">
           <span class="badge ${badgeClass}">${badgeText}</span>
           <span class="file-name">${esc(f.filename)}</span>
@@ -318,23 +356,23 @@ function render() {
         <div class="fields-row">
           <div class="field">
             <label>Filename</label>
-            <input type="text" class="input-filename" placeholder="Enter filename" ${disabled} />
+            <input type="text" class="input-filename" placeholder="Enter filename" value="${escAttr(draft.custom_filename ?? '')}" ${disabled} />
           </div>
           <div class="field">
             <label>Artist</label>
-            <input type="text" class="input-artist" placeholder="Enter artist" ${disabled} />
+            <input type="text" class="input-artist" placeholder="Enter artist" value="${escAttr(draft.artist ?? '')}" ${disabled} />
           </div>
           <div class="field">
             <label>Album</label>
-            <input type="text" class="input-album" placeholder="Enter album" ${disabled} />
+            <input type="text" class="input-album" placeholder="Enter album" value="${escAttr(draft.album ?? '')}" ${disabled} />
           </div>
         </div>
         <div class="cover-row">
-          <label><input type="checkbox" class="input-cover" checked ${disabled} /> Default cover</label>
+          <label><input type="checkbox" class="input-cover" ${draft.use_default_cover === false ? '' : 'checked'} ${disabled} /> Default cover</label>
         </div>
         <div class="actions-row">
-          <button class="btn btn-skip" onclick="skipFile('${esc(f.path)}')" ${disabled}>Skip</button>
-          <button class="btn btn-tag" onclick="tagFile('${esc(f.path)}')" ${disabled}>
+          <button class="btn btn-skip" data-action="skip" data-index="${i}" ${disabled}>Skip</button>
+          <button class="btn btn-tag" data-action="tag" data-index="${i}" ${disabled}>
             ${f.status === 'processing' ? 'Applying...' : 'Apply tags'}
           </button>
         </div>
@@ -343,12 +381,12 @@ function render() {
 
   if (doneFiles.length > 0) {
     html += '<div class="recent-label">Recent</div>';
-    for (const f of doneFiles) {
+    for (const {f, i} of doneFiles) {
       const badgeClass = f.status === 'tagged' ? 'badge-tagged' : 'badge-skipped';
       const badgeText = f.status === 'tagged' ? 'DONE' : 'SKIPPED';
       const meta = f.meta || {};
       const parts = [meta.artist, meta.album, meta.use_default_cover ? 'default cover' : ''].filter(Boolean);
-      const metaStr = parts.length > 0 ? parts.join(' &middot; ') : '';
+      const metaStr = parts.map(p => esc(p)).join(' &middot; ');
 
       html += `
         <div class="done-item">
@@ -359,7 +397,7 @@ function render() {
               ${metaStr ? `<div class="meta-info">${metaStr}</div>` : ''}
             </div>
           </div>
-          ${f.status === 'tagged' ? `<button class="btn btn-retag" onclick="retagFile('${esc(f.path)}')">Re-tag</button>` : ''}
+          ${f.status === 'tagged' ? `<button class="btn btn-retag" data-action="retag" data-index="${i}">Re-tag</button>` : ''}
         </div>`;
     }
   }
@@ -369,19 +407,59 @@ function render() {
   }
 
   fileList.innerHTML = html;
+
+  // Wire up button events (avoids HTML/JS quoting issues with special chars in paths)
+  fileList.querySelectorAll('button[data-action]').forEach(btn => {
+    const idx = parseInt(btn.dataset.index, 10);
+    const action = btn.dataset.action;
+    btn.addEventListener('click', () => {
+      if (action === 'tag') tagFile(idx);
+      else if (action === 'skip') skipFile(idx);
+      else if (action === 'retag') retagFile(idx);
+    });
+  });
+
+  // Persist input edits into the draft so they survive re-renders
+  fileList.querySelectorAll('.file-card').forEach(card => {
+    const idx = parseInt(card.dataset.index, 10);
+    const f = files[idx];
+    if (!f) return;
+    const sync = () => {
+      f.draft = {
+        custom_filename: card.querySelector('.input-filename')?.value || '',
+        artist: card.querySelector('.input-artist')?.value || '',
+        album: card.querySelector('.input-album')?.value || '',
+        use_default_cover: card.querySelector('.input-cover')?.checked ?? true,
+      };
+    };
+    card.querySelectorAll('input').forEach(inp => inp.addEventListener('input', sync));
+    card.querySelectorAll('input[type="checkbox"]').forEach(inp => inp.addEventListener('change', sync));
+  });
 }
 
-async function tagFile(path) {
-  const card = document.querySelector(`[data-path="${CSS.escape(path)}"]`);
+async function tagFile(index) {
+  const f = files[index];
+  if (!f) return;
+  const card = fileList.querySelector(`.file-card[data-index="${index}"]`);
   if (!card) return;
 
   const data = {
-    path: path,
+    path: f.path,
     custom_filename: card.querySelector('.input-filename')?.value || '',
     artist: card.querySelector('.input-artist')?.value || '',
     album: card.querySelector('.input-album')?.value || '',
     use_default_cover: card.querySelector('.input-cover')?.checked ?? true,
   };
+
+  // Optimistic UI: switch to processing state immediately
+  f.status = 'processing';
+  f.draft = {
+    custom_filename: data.custom_filename,
+    artist: data.artist,
+    album: data.album,
+    use_default_cover: data.use_default_cover,
+  };
+  render();
 
   try {
     const resp = await fetch('/tagger/tag', {
@@ -391,40 +469,80 @@ async function tagFile(path) {
     });
     const result = await resp.json();
     if (result.status === 'error') {
-      alert('Tagging failed: ' + result.msg);
+      f.status = 'error';
+      render();
+      showToast('Tagging failed: ' + result.msg, 'error');
+      return;
     }
+
+    // Update local state immediately (don't rely solely on WebSocket)
+    f.status = 'tagged';
+    if (result.new_path) {
+      f.path = result.new_path;
+      const parts = result.new_path.split('/');
+      f.filename = parts[parts.length - 1];
+    }
+    f.meta = {
+      custom_filename: data.custom_filename,
+      artist: data.artist,
+      album: data.album,
+      use_default_cover: data.use_default_cover,
+    };
+    render();
+    showToast('Tags applied: ' + f.filename, 'success');
   } catch (e) {
-    alert('Tagging failed: ' + e.message);
+    f.status = 'error';
+    render();
+    showToast('Tagging failed: ' + e.message, 'error');
   }
 }
 
-async function skipFile(path) {
+async function skipFile(index) {
+  const f = files[index];
+  if (!f) return;
   try {
     await fetch('/tagger/skip', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({path}),
+      body: JSON.stringify({path: f.path}),
     });
-    const f = files.find(f => f.path === path);
-    if (f) f.status = 'skipped';
+    f.status = 'skipped';
     render();
   } catch (e) {
     console.error('Skip failed:', e);
   }
 }
 
-function retagFile(path) {
-  const f = files.find(f => f.path === path);
+function retagFile(index) {
+  const f = files[index];
   if (f) {
     f.status = 'new';
     render();
   }
 }
 
+let toastTimer;
+function showToast(message, kind = 'success') {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast show ' + kind;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.className = 'toast ' + kind; }, 3500);
+}
+
 function esc(s) {
   const div = document.createElement('div');
   div.textContent = s || '';
   return div.innerHTML;
+}
+
+function escAttr(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 loadFiles();
