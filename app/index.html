@@ -306,6 +306,12 @@ function connectWS() {
         if (msg.entry) Object.assign(f, msg.entry);
         render();
       }
+    } else if (msg.type === 'removed') {
+      const idx = files.findIndex(f => f.path === msg.path);
+      if (idx !== -1) {
+        files.splice(idx, 1);
+        render();
+      }
     }
   };
 }

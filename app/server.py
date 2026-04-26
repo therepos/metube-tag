@@ -19,6 +19,7 @@ STABLE_CHECK_COUNT = 3     # file must be same size for this many checks
 # In-memory state
 recent_files = []  # list of dicts: {filename, path, status, meta}
 pending_files = set()  # paths being monitored for stability
+pending_renames = set()  # paths currently being renamed by us (suppress delete events)
 MAX_RECENT = 50
 
 
@@ -81,13 +82,39 @@ async def wait_for_stable(app, path):
         log.error(f"Stability check error for {path}: {e}")
 
 
+async def handle_deleted(app, path):
+    """Drop a deleted file from recent_files and notify clients."""
+    # Don't react to delete events caused by our own renames
+    if path in pending_renames:
+        return
+    pending_files.discard(path)
+
+    for i, f in enumerate(recent_files):
+        if f['path'] == path:
+            recent_files.pop(i)
+            log.info(f"File removed from disk, dropping entry: {path}")
+            for ws in app.get('ws_clients', []):
+                try:
+                    await ws.send_json({'type': 'removed', 'path': path})
+                except Exception:
+                    pass
+            return
+
+
 async def watch_downloads(app):
     """Background task: watch download folder for new audio files."""
     log.info(f"Watching {DOWNLOAD_DIR} for new audio files")
     try:
         async for changes in awatch(DOWNLOAD_DIR, recursive=True):
             for change_type, path in changes:
-                if change_type in (Change.added, Change.modified) and is_audio_file(path) and os.path.isfile(path):
+                if not is_audio_file(path):
+                    continue
+
+                if change_type == Change.deleted:
+                    await handle_deleted(app, path)
+                    continue
+
+                if change_type in (Change.added, Change.modified) and os.path.isfile(path):
                     # Skip if already tracked or already being monitored
                     if any(f['path'] == path for f in recent_files):
                         continue
@@ -149,6 +176,7 @@ async def api_tag(request):
             except Exception:
                 pass
 
+    pending_renames.add(path)
     try:
         custom_filename = data.get('custom_filename') or None
         artist = data.get('artist') or None
@@ -201,6 +229,8 @@ async def api_tag(request):
         if entry:
             entry['status'] = 'error'
         return web.json_response({'status': 'error', 'msg': str(e)}, status=500)
+    finally:
+        pending_renames.discard(path)
 
 
 async def api_skip(request):
